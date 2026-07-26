@@ -122,8 +122,10 @@ launchctl load ~/Library/LaunchAgents/com.pronostics.generate.plist
 
 ### c. Base de données PostgreSQL gratuite
 
-1. Dans le projet Vercel → onglet **Storage** → **Create Database** → **Postgres** (propulsé par Neon, plan gratuit).
-2. Une fois créée, connecte-la au projet (bouton **Connect**) — Vercel injecte automatiquement `DATABASE_URL` dans les variables d'environnement du projet.
+1. Dans le projet Vercel → onglet **Storage** → **Create Database** (Postgres via Neon ou Supabase, plan gratuit).
+2. Une fois créée, connecte-la au projet (bouton **Connect**) — Vercel injecte automatiquement les variables `POSTGRES_URL` / `POSTGRES_URL_NON_POOLING` / `POSTGRES_PRISMA_URL` (ou `DATABASE_URL` selon le fournisseur) dans les variables d'environnement du projet.
+
+> **Important** : après avoir connecté la base, il faut redéployer manuellement (Deployments → `⋯` → Redeploy) pour que les nouvelles variables soient prises en compte — les connecter ne redéploie pas automatiquement.
 
 ### d. Variables d'environnement
 
@@ -141,11 +143,11 @@ CRON_SECRET=f48adcc66a0946f7a4e2b88ece9a28e82e0bba6d3903b9ea58c3c161c3990c32
 
 Clique sur **Deploy**. Le script `build` (`prisma generate && prisma migrate deploy && next build`) crée automatiquement la table `Pick` sur la nouvelle base au premier déploiement.
 
-Une fois déployé, Vercel te donne une URL du type `https://pronostics-app-xxxx.vercel.app`. Le cron défini dans `vercel.json` (`/api/cron/generate-picks`, tous les jours à 7h UTC) génère les pronostics automatiquement — plus besoin de ton Mac.
+Une fois déployé, Vercel te donne une URL du type `https://pronostics-app-wq1e.vercel.app`. Le cron défini dans `vercel.json` (`/api/cron/generate-picks`, tous les jours à 7h UTC) génère les pronostics automatiquement — plus besoin de ton Mac.
 
 Pour tester manuellement la génération sur le déploiement :
 ```sh
-curl -H "Authorization: Bearer <ton CRON_SECRET>" https://pronostics-app-xxxx.vercel.app/api/cron/generate-picks
+curl -H "Authorization: Bearer <ton CRON_SECRET>" https://pronostics-app-wq1e.vercel.app/api/cron/generate-picks
 ```
 
 ### f. Redéployer après un changement
@@ -154,6 +156,13 @@ curl -H "Authorization: Bearer <ton CRON_SECRET>" https://pronostics-app-xxxx.ve
 git add -A && git commit -m "..." && git push
 ```
 Vercel redéploie automatiquement à chaque push sur `main`.
+
+### Dépannage
+
+- **Page 404 partout malgré un build vert** : va dans **Settings → General → Framework Preset** et vérifie que c'est bien réglé sur **Next.js** (pas "Other"). Ça peut rester sur "Other" si Root Directory a été changé après l'import initial — il faut le sélectionner manuellement, sauvegarder, puis redéployer.
+- **`prisma migrate deploy` reste bloqué (timeout après ~45 min)** : la connexion utilisée passe par le pooler (PgBouncer) au lieu de la connexion directe — déjà corrigé dans `prisma.config.ts` (utilise `POSTGRES_URL_NON_POOLING`), mais si le fournisseur ne fournit pas cette variable, vérifie son nom exact dans Storage → ta base → onglet ".env.local".
+- **Erreur `self-signed certificate in certificate chain`** : le pooler Supabase utilise une chaîne de certificats non reconnue par Node — déjà corrigé dans `src/lib/prisma.ts` (`sslmode=no-verify` + `ssl: { rejectUnauthorized: false }`).
+- **Redirection vers une page de login Vercel** : la protection **Deployment Protection → Vercel Authentication** est activée — désactive-la (ou limite-la aux Preview) dans Settings pour que l'app soit accessible publiquement.
 
 ## 3. App mobile (`app/`)
 
@@ -166,7 +175,7 @@ Vérifie `app/.env` — `EXPO_PUBLIC_API_URL` doit pointer vers ton backend :
 
 - **Backend déployé sur Vercel (section 2)** — utilise directement l'URL Vercel, ça marche partout (Wi-Fi ou 4G) :
   ```
-  EXPO_PUBLIC_API_URL=https://pronostics-app-xxxx.vercel.app
+  EXPO_PUBLIC_API_URL=https://pronostics-app-wq1e.vercel.app
   ```
 - **Backend en local** — utilise l'IP locale de ton Mac, pas `localhost` (l'iPhone est un appareil différent sur le réseau), et l'iPhone doit être sur le même Wi-Fi :
   ```
