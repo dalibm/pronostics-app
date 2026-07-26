@@ -22,7 +22,16 @@ function getConnectionString(): string {
 }
 
 function createClient() {
-  const adapter = new PrismaPg({ connectionString: getConnectionString() });
+  const connectionString = getConnectionString();
+  // Le pooler Supabase présente une chaîne de certificats que Node ne trouve
+  // pas dans ses CA de confiance par défaut ("self-signed certificate in
+  // certificate chain") — on garde le chiffrement TLS mais sans vérifier la
+  // chaîne, comme le fait le moteur natif de Prisma automatiquement.
+  const needsSsl = !connectionString.includes("localhost");
+  const adapter = new PrismaPg({
+    connectionString,
+    ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
+  });
   return new PrismaClient({ adapter });
 }
 
