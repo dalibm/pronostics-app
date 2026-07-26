@@ -47,7 +47,9 @@ Ce script priorise le **football**, toutes divisions confondues (championnats ma
 4. Garde les 5 candidats de foot avec la plus haute confiance, tous championnats confondus. S'il y en a moins de 5, comble avec les autres sports suivis (mêmes règles) pour arriver à 5.
 5. Stocke le résultat en base (remplace les pronostics du jour s'ils existaient déjà).
 
-**Coût** : The Odds API ne facture **pas** les requêtes qui ne retournent aucun match (vérifié via l'en-tête `x-requests-last: 0`) — on peut donc interroger toutes les ligues actives sans payer pour celles qui ne jouent pas ce jour-là. Seules les ligues avec un match effectif coûtent des crédits (2 pour le foot — 1X2 + buts —, 1 pour les autres sports), avec un plafond de sécurité (20 ligues de foot payantes max, 6 autres sports max par exécution) pour éviter un pic de coût un jour où beaucoup de championnats jouent en même temps.
+**Coût** : The Odds API ne facture **pas** les requêtes qui ne retournent aucun match (vérifié via l'en-tête `x-requests-last: 0`) — on peut donc interroger toutes les ligues actives (~40 au total) sans payer pour celles qui ne jouent pas ce jour-là. Seules les ligues avec un match effectif coûtent des crédits (2 pour le foot — 1X2 + buts —, 1 pour les autres sports), avec un plafond de sécurité large (60 ligues de foot payantes max, 6 autres sports max par exécution) qui ne limite pas la recherche en pratique — il sert juste à éviter un pic de coût extrême un jour exceptionnel.
+
+Chaque pronostic affiche aussi la **date et l'heure du match** (`matchTime`), converties automatiquement dans le fuseau horaire du téléphone côté app.
 
 Cartons et corners ne sont pas encore couverts : ce sont des marchés "additionnels" chez The Odds API qui nécessitent d'interroger chaque match individuellement (bien plus coûteux en crédits) — à ajouter plus tard si besoin, avec une limite stricte du nombre de matchs concernés pour rester gratuit.
 

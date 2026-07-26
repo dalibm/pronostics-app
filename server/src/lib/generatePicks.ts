@@ -31,10 +31,11 @@ const PRIORITY_LEAGUES = [
 // fenêtre demandée). On peut donc interroger TOUTES les ligues actives —
 // y compris D2/D3 — sans coût pour celles qui ne jouent pas ce jour-là ；
 // seules les ligues qui ont effectivement des matchs coûtent des crédits.
-// On plafonne quand même le nombre de ligues PAYANTES par exécution pour
-// éviter une explosion de coût un jour où beaucoup de ligues jouent en même
-// temps (foot = 2 crédits/ligue avec match, h2h + buts ; autres = 1 crédit).
-const MAX_PAID_FOOTBALL_LEAGUES = 20;
+// Filet de sécurité seulement (pas une vraie limite en pratique : il y a
+// environ 40 ligues de foot suivies au total) pour éviter une explosion de
+// coût si un jour exceptionnel voit énormément de ligues jouer en même temps
+// (foot = 2 crédits/ligue avec match, h2h + buts ; autres = 1 crédit).
+const MAX_PAID_FOOTBALL_LEAGUES = 60;
 const MAX_PAID_OTHER_SPORTS = 6;
 const HOURS_AHEAD = 48;
 
@@ -68,6 +69,7 @@ type CandidatePick = {
   sport: string;
   league: string;
   event: string;
+  matchTime: string;
   market: string;
   selection: string;
   odds: number;
@@ -172,6 +174,7 @@ function evaluateH2h(event: OddsApiEvent, sportInfo: OddsApiSport): CandidatePic
     sport: sportInfo.group,
     league: sportInfo.title,
     event: `${event.home_team} vs ${event.away_team}`,
+    matchTime: event.commence_time,
     market: isSoccer ? "Résultat du match (1X2)" : "Vainqueur du match",
     selection: favorite === "Draw" ? "Match nul" : selectionLabel,
     odds: Math.round(avgOdds * 100) / 100,
@@ -241,6 +244,7 @@ function evaluateTotals(event: OddsApiEvent, sportInfo: OddsApiSport): Candidate
     sport: sportInfo.group,
     league: sportInfo.title,
     event: `${event.home_team} vs ${event.away_team}`,
+    matchTime: event.commence_time,
     market: "Nombre de buts (Over/Under)",
     selection: `${direction} de ${chosenPoint} buts`,
     odds: Math.round(avgOdds * 100) / 100,
@@ -354,6 +358,7 @@ export async function generatePicks(): Promise<{ count: number; date: string }> 
     await prisma.pick.createMany({
       data: picks.map((p) => ({
         date: dateOnly,
+        matchTime: new Date(p.matchTime),
         sport: p.sport,
         league: p.league,
         event: p.event,

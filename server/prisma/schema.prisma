@@ -10,6 +10,7 @@ datasource db {
 model Pick {
   id         String   @id @default(cuid())
   date       DateTime @db.Date
+  matchTime  DateTime
   sport      String
   league     String?
   event      String

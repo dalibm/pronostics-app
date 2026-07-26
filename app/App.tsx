@@ -16,12 +16,26 @@ type Pick = {
   sport: string;
   league: string | null;
   event: string;
+  matchTime: string;
   market: string;
   selection: string;
   odds: number | null;
   confidence: number;
   reasoning: string;
 };
+
+function formatMatchTime(iso: string): string {
+  const d = new Date(iso);
+  const datePart = d.toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "2-digit",
+  });
+  const timePart = d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${datePart} ${timePart}`;
+}
 
 export default function App() {
   const [picks, setPicks] = useState<Pick[]>([]);
@@ -91,6 +105,7 @@ export default function App() {
                 <Text style={styles.confidence}>{pick.confidence}%</Text>
               </View>
               <Text style={styles.event}>{pick.event}</Text>
+              <Text style={styles.matchTime}>{formatMatchTime(pick.matchTime)}</Text>
               <Text style={styles.selection}>
                 {pick.market} — {pick.selection}
               </Text>
@@ -173,6 +188,12 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "600",
     marginBottom: 2,
+  },
+  matchTime: {
+    color: "#6b90ff",
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: 8,
   },
   selection: {
     color: "#d6dbe6",
