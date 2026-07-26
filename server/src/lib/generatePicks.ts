@@ -37,7 +37,7 @@ const PRIORITY_LEAGUES = [
 // (foot = 2 crédits/ligue avec match, h2h + buts ; autres = 1 crédit).
 const MAX_PAID_FOOTBALL_LEAGUES = 60;
 const MAX_PAID_OTHER_SPORTS = 6;
-const HOURS_AHEAD = 48;
+const HOURS_AHEAD = 24;
 
 type OddsApiSport = {
   key: string;

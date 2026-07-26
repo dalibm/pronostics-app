@@ -42,7 +42,7 @@ npm run generate:picks
 Ce script priorise le **football**, toutes divisions confondues (championnats majeurs comme Ligue 1/Liga/Bundesliga/Serie A, mais aussi D2/D3 — Championship, Ligue 2, Bundesliga 2, Serie B... — et les qualifications européennes), et ne complète avec d'autres sports (basket, hockey, football US, baseball, MMA) que s'il manque des matchs pour arriver à 5, par exemple pendant les trêves internationales.
 
 1. Récupère la liste de **toutes** les ligues de foot actuellement en saison (pas seulement l'élite).
-2. Pour chacune, récupère les cotes moyennées sur plusieurs bookmakers via The Odds API — marché "1X2 / vainqueur du match" et "nombre de buts (Over/Under)" — en filtrant sur les matchs des prochaines 48h directement au niveau de la requête (`commenceTimeFrom`/`commenceTimeTo`).
+2. Pour chacune, récupère les cotes moyennées sur plusieurs bookmakers via The Odds API — marché "1X2 / vainqueur du match" et "nombre de buts (Over/Under)" — en filtrant sur les matchs des prochaines 24h directement au niveau de la requête (`commenceTimeFrom`/`commenceTimeTo`).
 3. Calcule une probabilité implicite par issue (à partir de la cote moyenne, normalisée entre les issues possibles) et retient le favori de chaque marché comme candidat pronostic.
 4. Garde les 5 candidats de foot avec la plus haute confiance, tous championnats confondus. S'il y en a moins de 5, comble avec les autres sports suivis (mêmes règles) pour arriver à 5.
 5. Stocke le résultat en base (remplace les pronostics du jour s'ils existaient déjà).
