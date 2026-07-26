@@ -1,11 +1,8 @@
 import { prisma } from "./prisma";
 
-// Toutes les grandes ligues n'ont pas de matchs toute l'année (ex. foot européen,
-// NBA, NFL, NHL sont en pause l'été). On élargit donc aux catégories de sport
-// suivies, puis on privilégie les plus grandes ligues quand plusieurs sont actives
-// en même temps (voir tri par PRIORITY_LEAGUES plus bas).
-const ALLOWED_GROUPS = new Set([
-  "Soccer",
+// Le foot est la priorité de l'app ; les autres sports ne servent qu'à
+// compléter s'il manque des pronostics de foot un jour donné.
+const OTHER_GROUPS = new Set([
   "Basketball",
   "Ice Hockey",
   "American Football",
@@ -14,7 +11,8 @@ const ALLOWED_GROUPS = new Set([
   "Mixed Martial Arts",
 ]);
 
-// Grandes ligues à privilégier quand elles sont en saison (ordre = priorité).
+// Ordre de préférence quand plusieurs ligues ont des matchs le même jour —
+// n'affecte pas le coût (voir plus bas), juste l'ordre d'évaluation.
 const PRIORITY_LEAGUES = [
   "soccer_epl",
   "soccer_spain_la_liga",
@@ -26,18 +24,18 @@ const PRIORITY_LEAGUES = [
   "americanfootball_nfl",
   "icehockey_nhl",
   "baseball_mlb",
-  "soccer_usa_mls",
-  "soccer_brazil_campeonato",
-  "soccer_japan_j_league",
-  "mma_mixed_martial_arts",
 ];
 
-// Budget de crédits The Odds API par exécution : 1 crédit = 1 sport x 1 region x
-// 1 market. Le foot coûte 2 crédits (marchés h2h + totals), les autres sports 1
-// crédit (h2h seul). 15/jour x 30 ≈ 450/mois, sous le quota gratuit (500/mois),
-// avec marge pour des tests manuels.
-const DAILY_CREDIT_BUDGET = 15;
-const MAX_SPORT_CALLS = 12;
+// The Odds API ne facture PAS les requêtes qui ne retournent aucun match
+// (vérifié : header `x-requests-last: 0` sur une ligue sans match dans la
+// fenêtre demandée). On peut donc interroger TOUTES les ligues actives —
+// y compris D2/D3 — sans coût pour celles qui ne jouent pas ce jour-là ；
+// seules les ligues qui ont effectivement des matchs coûtent des crédits.
+// On plafonne quand même le nombre de ligues PAYANTES par exécution pour
+// éviter une explosion de coût un jour où beaucoup de ligues jouent en même
+// temps (foot = 2 crédits/ligue avec match, h2h + buts ; autres = 1 crédit).
+const MAX_PAID_FOOTBALL_LEAGUES = 20;
+const MAX_PAID_OTHER_SPORTS = 6;
 const HOURS_AHEAD = 48;
 
 type OddsApiSport = {
@@ -88,12 +86,12 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 async function getActiveSports(apiKey: string): Promise<OddsApiSport[]> {
+  // Endpoint gratuit (ne compte jamais dans le quota).
   const sports = await fetchJson<OddsApiSport[]>(
     `https://api.the-odds-api.com/v4/sports/?apiKey=${apiKey}`,
   );
-  const inScope = sports.filter((s) => s.active && ALLOWED_GROUPS.has(s.group));
+  const inScope = sports.filter((s) => s.active && (s.group === "Soccer" || OTHER_GROUPS.has(s.group)));
 
-  // Grandes ligues (dans PRIORITY_LEAGUES) en premier, dans cet ordre ; le reste ensuite.
   return inScope.sort((a, b) => {
     const pa = PRIORITY_LEAGUES.indexOf(a.key);
     const pb = PRIORITY_LEAGUES.indexOf(b.key);
@@ -255,21 +253,33 @@ function evaluateTotals(event: OddsApiEvent, sportInfo: OddsApiSport): Candidate
   };
 }
 
+/**
+ * Interroge chaque sport de la liste. Comme les ligues sans match dans la
+ * fenêtre ne coûtent rien, on les évalue TOUTES et on ne s'arrête que quand
+ * `maxPaidLeagues` ligues ont effectivement retourné des matchs (coût réel).
+ */
 async function evaluateSports(
   sports: OddsApiSport[],
   apiKey: string,
   regions: string,
   now: number,
   cutoff: number,
+  maxPaidLeagues: number,
 ): Promise<CandidatePick[]> {
   const candidates: CandidatePick[] = [];
+  const commenceTimeFrom = new Date(now).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const commenceTimeTo = new Date(cutoff).toISOString().replace(/\.\d{3}Z$/, "Z");
+  let paidLeagues = 0;
 
   for (const sportInfo of sports) {
+    if (paidLeagues >= maxPaidLeagues) break;
+
     const isSoccer = sportInfo.group === "Soccer";
     const markets = isSoccer ? "h2h,totals" : "h2h";
     const url =
       `https://api.the-odds-api.com/v4/sports/${sportInfo.key}/odds/` +
-      `?apiKey=${apiKey}&regions=${regions}&markets=${markets}&oddsFormat=decimal`;
+      `?apiKey=${apiKey}&regions=${regions}&markets=${markets}&oddsFormat=decimal` +
+      `&commenceTimeFrom=${commenceTimeFrom}&commenceTimeTo=${commenceTimeTo}`;
     let events: OddsApiEvent[];
     try {
       events = await fetchJson<OddsApiEvent[]>(url);
@@ -278,10 +288,10 @@ async function evaluateSports(
       continue;
     }
 
-    for (const event of events) {
-      const commence = new Date(event.commence_time).getTime();
-      if (commence < now || commence > cutoff) continue;
+    if (events.length === 0) continue; // gratuit, ne compte pas dans le quota
+    paidLeagues++;
 
+    for (const event of events) {
       const h2hCandidate = evaluateH2h(event, sportInfo);
       if (h2hCandidate) candidates.push(h2hCandidate);
 
@@ -293,25 +303,6 @@ async function evaluateSports(
   }
 
   return candidates;
-}
-
-// Sélectionne les sports à interroger dans la limite du budget de crédits
-// restant, en respectant l'ordre déjà trié de `sports`.
-function pickWithinBudget(
-  sports: OddsApiSport[],
-  costPerSport: number,
-  budgetRemaining: number,
-  maxCount: number,
-): OddsApiSport[] {
-  const selected: OddsApiSport[] = [];
-  let used = 0;
-  for (const s of sports) {
-    if (selected.length >= maxCount) break;
-    if (used + costPerSport > budgetRemaining) break;
-    selected.push(s);
-    used += costPerSport;
-  }
-  return selected;
 }
 
 export async function generatePicks(): Promise<{ count: number; date: string }> {
@@ -330,26 +321,30 @@ export async function generatePicks(): Promise<{ count: number; date: string }> 
   const now = Date.now();
   const cutoff = now + HOURS_AHEAD * 60 * 60 * 1000;
 
-  // Le foot est toujours prioritaire : on interroge d'abord toutes les ligues
-  // actives (h2h + buts), dans la limite du budget de crédits.
-  const footballToQuery = pickWithinBudget(footballSports, 2, DAILY_CREDIT_BUDGET, MAX_SPORT_CALLS);
-  const footballCandidates = await evaluateSports(footballToQuery, apiKey, regions, now, cutoff);
-  const footballBudgetUsed = footballToQuery.length * 2;
+  // Le foot est toujours prioritaire : on interroge TOUTES les ligues actives
+  // (top divisions comme D2/D3), h2h + buts. Coût nul pour celles sans match.
+  const footballCandidates = await evaluateSports(
+    footballSports,
+    apiKey,
+    regions,
+    now,
+    cutoff,
+    MAX_PAID_FOOTBALL_LEAGUES,
+  );
 
   let picks = footballCandidates.sort((a, b) => b.confidence - a.confidence).slice(0, 5);
 
-  // Les autres sports ne comblent que les places restantes, avec le budget
-  // qu'il reste après le foot.
+  // Les autres sports ne comblent que les places restantes.
   if (picks.length < 5) {
     const remainingSlots = 5 - picks.length;
-    const remainingBudget = DAILY_CREDIT_BUDGET - footballBudgetUsed;
-    const otherToQuery = pickWithinBudget(
+    const otherCandidates = await evaluateSports(
       otherSports,
-      1,
-      remainingBudget,
-      MAX_SPORT_CALLS - footballToQuery.length,
+      apiKey,
+      regions,
+      now,
+      cutoff,
+      MAX_PAID_OTHER_SPORTS,
     );
-    const otherCandidates = await evaluateSports(otherToQuery, apiKey, regions, now, cutoff);
     const otherPicks = otherCandidates.sort((a, b) => b.confidence - a.confidence).slice(0, remainingSlots);
     picks = [...picks, ...otherPicks];
   }
