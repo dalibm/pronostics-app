@@ -9,24 +9,32 @@ const globalForPrisma = globalThis as unknown as {
 // utilisée sur Vercel (DATABASE_URL en local, POSTGRES_PRISMA_URL ou
 // POSTGRES_URL selon l'intégration Vercel Postgres/Neon).
 function getConnectionString(): string {
-  const url =
+  const raw =
     process.env.DATABASE_URL ??
     process.env.POSTGRES_PRISMA_URL ??
     process.env.POSTGRES_URL;
-  if (!url) {
+  if (!raw) {
     throw new Error(
       "Aucune variable DATABASE_URL / POSTGRES_PRISMA_URL / POSTGRES_URL trouvée.",
     );
   }
-  return url;
+  if (raw.includes("localhost")) return raw;
+
+  // Le pooler Supabase présente une chaîne de certificats que Node ne trouve
+  // pas dans ses CA de confiance par défaut ("self-signed certificate in
+  // certificate chain"). `sslmode=no-verify` force node-postgres à chiffrer
+  // la connexion sans vérifier la chaîne — le fix recommandé par Supabase.
+  try {
+    const url = new URL(raw);
+    url.searchParams.set("sslmode", "no-verify");
+    return url.toString();
+  } catch {
+    return raw;
+  }
 }
 
 function createClient() {
   const connectionString = getConnectionString();
-  // Le pooler Supabase présente une chaîne de certificats que Node ne trouve
-  // pas dans ses CA de confiance par défaut ("self-signed certificate in
-  // certificate chain") — on garde le chiffrement TLS mais sans vérifier la
-  // chaîne, comme le fait le moteur natif de Prisma automatiquement.
   const needsSsl = !connectionString.includes("localhost");
   const adapter = new PrismaPg({
     connectionString,
