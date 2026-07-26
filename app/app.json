@@ -20,6 +20,18 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "25adb3b3-834d-4c7d-988d-2b141fe5dabb"
+      }
+    },
+    "owner": "dalibm",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/25adb3b3-834d-4c7d-988d-2b141fe5dabb"
     }
   }
 }

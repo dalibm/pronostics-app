@@ -255,39 +255,16 @@ function evaluateTotals(event: OddsApiEvent, sportInfo: OddsApiSport): Candidate
   };
 }
 
-export async function generatePicks(): Promise<{ count: number; date: string }> {
-  const apiKey = process.env.ODDS_API_KEY;
-  if (!apiKey) {
-    throw new Error("ODDS_API_KEY manquant dans les variables d'environnement");
-  }
-  const regions = process.env.ODDS_API_REGIONS ?? "eu";
-
-  const activeSports = await getActiveSports(apiKey);
-
-  // Sélection des sports à interroger dans la limite du budget de crédits.
-  const sportsToQuery: OddsApiSport[] = [];
-  let budgetUsed = 0;
-  for (const s of activeSports) {
-    if (sportsToQuery.length >= MAX_SPORT_CALLS) break;
-    const cost = s.group === "Soccer" ? 2 : 1; // foot = h2h + totals, autres = h2h seul
-    if (budgetUsed + cost > DAILY_CREDIT_BUDGET) continue;
-    sportsToQuery.push(s);
-    budgetUsed += cost;
-  }
-
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const dateOnly = new Date(`${todayIso}T00:00:00.000Z`);
-
-  if (sportsToQuery.length === 0) {
-    await prisma.pick.deleteMany({ where: { date: dateOnly } });
-    return { count: 0, date: todayIso };
-  }
-
-  const now = Date.now();
-  const cutoff = now + HOURS_AHEAD * 60 * 60 * 1000;
+async function evaluateSports(
+  sports: OddsApiSport[],
+  apiKey: string,
+  regions: string,
+  now: number,
+  cutoff: number,
+): Promise<CandidatePick[]> {
   const candidates: CandidatePick[] = [];
 
-  for (const sportInfo of sportsToQuery) {
+  for (const sportInfo of sports) {
     const isSoccer = sportInfo.group === "Soccer";
     const markets = isSoccer ? "h2h,totals" : "h2h";
     const url =
@@ -315,7 +292,67 @@ export async function generatePicks(): Promise<{ count: number; date: string }> 
     }
   }
 
-  const picks = candidates.sort((a, b) => b.confidence - a.confidence).slice(0, 5);
+  return candidates;
+}
+
+// Sélectionne les sports à interroger dans la limite du budget de crédits
+// restant, en respectant l'ordre déjà trié de `sports`.
+function pickWithinBudget(
+  sports: OddsApiSport[],
+  costPerSport: number,
+  budgetRemaining: number,
+  maxCount: number,
+): OddsApiSport[] {
+  const selected: OddsApiSport[] = [];
+  let used = 0;
+  for (const s of sports) {
+    if (selected.length >= maxCount) break;
+    if (used + costPerSport > budgetRemaining) break;
+    selected.push(s);
+    used += costPerSport;
+  }
+  return selected;
+}
+
+export async function generatePicks(): Promise<{ count: number; date: string }> {
+  const apiKey = process.env.ODDS_API_KEY;
+  if (!apiKey) {
+    throw new Error("ODDS_API_KEY manquant dans les variables d'environnement");
+  }
+  const regions = process.env.ODDS_API_REGIONS ?? "eu";
+
+  const activeSports = await getActiveSports(apiKey);
+  const footballSports = activeSports.filter((s) => s.group === "Soccer");
+  const otherSports = activeSports.filter((s) => s.group !== "Soccer");
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const dateOnly = new Date(`${todayIso}T00:00:00.000Z`);
+  const now = Date.now();
+  const cutoff = now + HOURS_AHEAD * 60 * 60 * 1000;
+
+  // Le foot est toujours prioritaire : on interroge d'abord toutes les ligues
+  // actives (h2h + buts), dans la limite du budget de crédits.
+  const footballToQuery = pickWithinBudget(footballSports, 2, DAILY_CREDIT_BUDGET, MAX_SPORT_CALLS);
+  const footballCandidates = await evaluateSports(footballToQuery, apiKey, regions, now, cutoff);
+  const footballBudgetUsed = footballToQuery.length * 2;
+
+  let picks = footballCandidates.sort((a, b) => b.confidence - a.confidence).slice(0, 5);
+
+  // Les autres sports ne comblent que les places restantes, avec le budget
+  // qu'il reste après le foot.
+  if (picks.length < 5) {
+    const remainingSlots = 5 - picks.length;
+    const remainingBudget = DAILY_CREDIT_BUDGET - footballBudgetUsed;
+    const otherToQuery = pickWithinBudget(
+      otherSports,
+      1,
+      remainingBudget,
+      MAX_SPORT_CALLS - footballToQuery.length,
+    );
+    const otherCandidates = await evaluateSports(otherToQuery, apiKey, regions, now, cutoff);
+    const otherPicks = otherCandidates.sort((a, b) => b.confidence - a.confidence).slice(0, remainingSlots);
+    picks = [...picks, ...otherPicks];
+  }
 
   await prisma.pick.deleteMany({ where: { date: dateOnly } });
   if (picks.length > 0) {

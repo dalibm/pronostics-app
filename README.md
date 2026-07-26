@@ -39,11 +39,13 @@ ODDS_API_REGIONS="eu"
 npm run generate:picks
 ```
 
-Ce script :
-1. Récupère la liste des sports/ligues actuellement en saison (foot, basket, hockey, football US, baseball, tennis, MMA), en priorisant les grandes ligues (EPL, Liga, NBA, NFL, MLB...) quand elles jouent, et en couvrant automatiquement d'autres compétitions actives sinon (ex. MLB et CFL en été).
-2. Pour chacun, récupère les cotes moyennées sur plusieurs bookmakers via The Odds API — marché "1X2 / vainqueur du match" pour tous les sports, plus "nombre de buts (Over/Under)" pour le foot.
+Ce script priorise le **football** : il interroge d'abord toutes les ligues de foot actuellement en saison (Ligue 1, Liga, Bundesliga, Serie A, Brésil, MLS, J-League...), et ne complète avec d'autres sports (basket, hockey, football US, baseball, MMA) que s'il manque des matchs pour arriver à 5 — par exemple pendant les trêves internationales.
+
+1. Récupère la liste des ligues de foot actuellement en saison.
+2. Pour chacune, récupère les cotes moyennées sur plusieurs bookmakers via The Odds API — marché "1X2 / vainqueur du match" et "nombre de buts (Over/Under)".
 3. Calcule une probabilité implicite par issue (à partir de la cote moyenne, normalisée entre les issues possibles) et retient le favori de chaque marché comme candidat pronostic.
-4. Garde les 5 candidats (tous sports/marchés confondus) à venir dans les prochaines 48h avec la plus haute confiance, et stocke le résultat en base (remplace les pronostics du jour s'ils existaient déjà).
+4. Garde les 5 candidats de foot à venir dans les prochaines 48h avec la plus haute confiance. S'il y en a moins de 5, comble avec les autres sports suivis (mêmes règles) pour arriver à 5.
+5. Stocke le résultat en base (remplace les pronostics du jour s'ils existaient déjà).
 
 Coût : le foot coûte 2 crédits par ligue interrogée (1X2 + buts), les autres sports 1 crédit — budgété à 15 crédits max par exécution, soit ~450/mois en lançant le script chaque jour, sous le quota gratuit de 500/mois.
 
