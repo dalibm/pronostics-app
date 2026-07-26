@@ -2,6 +2,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -10,6 +11,8 @@ import {
 } from "react-native";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000";
+
+type Period = "today" | "week";
 
 type Pick = {
   id: string;
@@ -38,20 +41,21 @@ function formatMatchTime(iso: string): string {
 }
 
 export default function App() {
+  const [period, setPeriod] = useState<Period>("today");
   const [picks, setPicks] = useState<Pick[]>([]);
   const [date, setDate] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPicks = useCallback(async () => {
+  const fetchPicks = useCallback(async (p: Period) => {
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/picks/today`);
+      const res = await fetch(`${API_URL}/api/picks/${p}`);
       if (!res.ok) throw new Error(`Erreur serveur (${res.status})`);
       const data = await res.json();
       setPicks(data.picks);
-      setDate(data.date);
+      setDate(data.date ?? "");
     } catch (e) {
       setError(
         e instanceof Error
@@ -62,18 +66,44 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    fetchPicks().finally(() => setLoading(false));
-  }, [fetchPicks]);
+    setLoading(true);
+    fetchPicks(period).finally(() => setLoading(false));
+  }, [period, fetchPicks]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchPicks().finally(() => setRefreshing(false));
-  }, [fetchPicks]);
+    fetchPicks(period).finally(() => setRefreshing(false));
+  }, [period, fetchPicks]);
+
+  const emptyMessage =
+    period === "today"
+      ? "Aucun pronostic pour aujourd'hui pour le moment."
+      : "Aucun pronostic pour cette semaine pour le moment.";
 
   return (
     <View style={styles.container}>
       <StatusBar style="auto" />
-      <Text style={styles.title}>Pronostics du jour</Text>
+      <Text style={styles.title}>Pronostics</Text>
+
+      <View style={styles.tabs}>
+        <Pressable
+          style={[styles.tab, period === "today" && styles.tabActive]}
+          onPress={() => setPeriod("today")}
+        >
+          <Text style={[styles.tabText, period === "today" && styles.tabTextActive]}>
+            Aujourd&apos;hui
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.tab, period === "week" && styles.tabActive]}
+          onPress={() => setPeriod("week")}
+        >
+          <Text style={[styles.tabText, period === "week" && styles.tabTextActive]}>
+            Cette semaine
+          </Text>
+        </Pressable>
+      </View>
+
       {!!date && <Text style={styles.date}>{date}</Text>}
 
       {loading ? (
@@ -84,9 +114,7 @@ export default function App() {
         </View>
       ) : picks.length === 0 ? (
         <View style={styles.centerBox}>
-          <Text style={styles.empty}>
-            Aucun pronostic pour aujourd&apos;hui pour le moment.
-          </Text>
+          <Text style={styles.empty}>{emptyMessage}</Text>
         </View>
       ) : (
         <ScrollView
@@ -135,6 +163,31 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: "700",
+    color: "#fff",
+    marginBottom: 12,
+  },
+  tabs: {
+    flexDirection: "row",
+    backgroundColor: "#151b2b",
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 8,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  tabActive: {
+    backgroundColor: "#2b3552",
+  },
+  tabText: {
+    color: "#8a93a6",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  tabTextActive: {
     color: "#fff",
   },
   date: {

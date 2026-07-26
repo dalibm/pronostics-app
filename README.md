@@ -43,7 +43,7 @@ Ce script priorise le **football**, toutes divisions confondues (championnats ma
 
 1. Récupère la liste de **toutes** les ligues de foot actuellement en saison (pas seulement l'élite).
 2. Pour chacune, récupère les cotes moyennées sur plusieurs bookmakers via The Odds API — marché "1X2 / vainqueur du match" et "nombre de buts (Over/Under)" — en filtrant sur les matchs des prochaines 24h directement au niveau de la requête (`commenceTimeFrom`/`commenceTimeTo`).
-3. Calcule une probabilité implicite par issue (à partir de la cote moyenne, normalisée entre les issues possibles) et retient le favori de chaque marché comme candidat pronostic.
+3. Calcule une probabilité implicite par issue (à partir de la cote moyenne, normalisée entre les issues possibles) et retient le favori de chaque marché comme candidat pronostic — en excluant les cotes trop faibles (≤ 1,2), peu intéressantes même à forte confiance.
 4. Garde les 5 candidats de foot avec la plus haute confiance, tous championnats confondus. S'il y en a moins de 5, comble avec les autres sports suivis (mêmes règles) pour arriver à 5.
 5. Stocke le résultat en base (remplace les pronostics du jour s'ils existaient déjà).
 

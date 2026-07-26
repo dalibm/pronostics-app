@@ -39,6 +39,10 @@ const MAX_PAID_FOOTBALL_LEAGUES = 60;
 const MAX_PAID_OTHER_SPORTS = 6;
 const HOURS_AHEAD = 24;
 
+// On exclut les cotes trop faibles (favoris écrasants, peu de valeur pour un
+// parieur) même si leur confiance calculée est très élevée.
+const MIN_ODDS = 1.2;
+
 type OddsApiSport = {
   key: string;
   group: string;
@@ -340,7 +344,10 @@ async function generatePicksForPeriod(
     MAX_PAID_FOOTBALL_LEAGUES,
   );
 
-  let picks = footballCandidates.sort((a, b) => b.confidence - a.confidence).slice(0, topN);
+  let picks = footballCandidates
+    .filter((c) => c.odds > MIN_ODDS)
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, topN);
 
   // Les autres sports ne comblent que les places restantes.
   if (picks.length < topN) {
@@ -353,7 +360,10 @@ async function generatePicksForPeriod(
       cutoff,
       MAX_PAID_OTHER_SPORTS,
     );
-    const otherPicks = otherCandidates.sort((a, b) => b.confidence - a.confidence).slice(0, remainingSlots);
+    const otherPicks = otherCandidates
+      .filter((c) => c.odds > MIN_ODDS)
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, remainingSlots);
     picks = [...picks, ...otherPicks];
   }
 
