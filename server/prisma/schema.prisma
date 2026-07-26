@@ -1,0 +1,25 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Pick {
+  id         String   @id @default(cuid())
+  date       DateTime @db.Date
+  sport      String
+  league     String?
+  event      String
+  market     String
+  selection  String
+  odds       Float?
+  confidence Int
+  reasoning  String   @db.Text
+  sourceUrls String[]
+  createdAt  DateTime @default(now())
+
+  @@index([date])
+}
