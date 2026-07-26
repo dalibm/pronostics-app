@@ -41,11 +41,13 @@ npm run generate:picks
 
 Ce script :
 1. Récupère la liste des sports/ligues actuellement en saison (foot, basket, hockey, football US, baseball, tennis, MMA), en priorisant les grandes ligues (EPL, Liga, NBA, NFL, MLB...) quand elles jouent, et en couvrant automatiquement d'autres compétitions actives sinon (ex. MLB et CFL en été).
-2. Pour chacun, récupère les cotes "1X2 / vainqueur du match" moyennées sur plusieurs bookmakers via The Odds API.
-3. Calcule une probabilité implicite par équipe (à partir de la cote moyenne, normalisée entre les issues possibles) et retient le favori de chaque match comme pronostic.
-4. Garde les 5 matchs à venir dans les prochaines 48h avec la plus haute confiance, et stocke le résultat en base (remplace les pronostics du jour s'ils existaient déjà).
+2. Pour chacun, récupère les cotes moyennées sur plusieurs bookmakers via The Odds API — marché "1X2 / vainqueur du match" pour tous les sports, plus "nombre de buts (Over/Under)" pour le foot.
+3. Calcule une probabilité implicite par issue (à partir de la cote moyenne, normalisée entre les issues possibles) et retient le favori de chaque marché comme candidat pronostic.
+4. Garde les 5 candidats (tous sports/marchés confondus) à venir dans les prochaines 48h avec la plus haute confiance, et stocke le résultat en base (remplace les pronostics du jour s'ils existaient déjà).
 
-Coût : au plus 12 crédits par exécution (1 crédit = 1 sport interrogé), soit ~360/mois en lançant le script chaque jour — sous le quota gratuit de 500/mois.
+Coût : le foot coûte 2 crédits par ligue interrogée (1X2 + buts), les autres sports 1 crédit — budgété à 15 crédits max par exécution, soit ~450/mois en lançant le script chaque jour, sous le quota gratuit de 500/mois.
+
+Cartons et corners ne sont pas encore couverts : ce sont des marchés "additionnels" chez The Odds API qui nécessitent d'interroger chaque match individuellement (bien plus coûteux en crédits) — à ajouter plus tard si besoin, avec une limite stricte du nombre de matchs concernés pour rester gratuit.
 
 ### Lancer le serveur
 

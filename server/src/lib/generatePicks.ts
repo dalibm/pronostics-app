@@ -32,8 +32,11 @@ const PRIORITY_LEAGUES = [
   "mma_mixed_martial_arts",
 ];
 
-// Limite le nombre d'appels /odds par exécution pour rester large sous le quota
-// gratuit (500 crédits/mois) : 1 crédit = 1 sport x 1 region x 1 market.
+// Budget de crédits The Odds API par exécution : 1 crédit = 1 sport x 1 region x
+// 1 market. Le foot coûte 2 crédits (marchés h2h + totals), les autres sports 1
+// crédit (h2h seul). 15/jour x 30 ≈ 450/mois, sous le quota gratuit (500/mois),
+// avec marge pour des tests manuels.
+const DAILY_CREDIT_BUDGET = 15;
 const MAX_SPORT_CALLS = 12;
 const HOURS_AHEAD = 48;
 
@@ -100,10 +103,15 @@ async function getActiveSports(apiKey: string): Promise<OddsApiSport[]> {
   });
 }
 
-function evaluateEvent(
-  event: OddsApiEvent,
-  sportInfo: OddsApiSport,
-): CandidatePick | null {
+function average(values: number[]): number {
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function evaluateH2h(event: OddsApiEvent, sportInfo: OddsApiSport): CandidatePick | null {
   const pricesByOutcome = new Map<string, number[]>();
 
   for (const bookmaker of event.bookmakers) {
@@ -124,7 +132,7 @@ function evaluateEvent(
 
   const avgByOutcome = new Map<string, number>();
   for (const [name, prices] of pricesByOutcome) {
-    avgByOutcome.set(name, prices.reduce((a, b) => a + b, 0) / prices.length);
+    avgByOutcome.set(name, average(prices));
   }
 
   const impliedByOutcome = new Map<string, number>();
@@ -172,7 +180,76 @@ function evaluateEvent(
     confidence,
     reasoning:
       `Favori du marché avec une cote moyenne de ${avgOdds.toFixed(2)} chez ${bookmakerCount} bookmaker(s) ` +
-      `(probabilité implicite ≈ ${confidence}%). ${consensus.charAt(0).toUpperCase()}${consensus.slice(1)} entre bookmakers ` +
+      `(probabilité implicite ≈ ${confidence}%). ${capitalize(consensus)} entre bookmakers ` +
+      `(cotes de ${minOdds.toFixed(2)} à ${maxOdds.toFixed(2)}).`,
+    sourceUrls: ["https://the-odds-api.com"],
+  };
+}
+
+function evaluateTotals(event: OddsApiEvent, sportInfo: OddsApiSport): CandidatePick | null {
+  // Les bookmakers peuvent proposer des lignes différentes (2.5, 3.0...) —
+  // on regroupe par ligne et on retient celle offrant le plus de cotations.
+  const byPoint = new Map<number, { over: number[]; under: number[] }>();
+  let bookmakerCount = 0;
+
+  for (const bookmaker of event.bookmakers) {
+    const totals = bookmaker.markets.find((m) => m.key === "totals");
+    if (!totals) continue;
+    bookmakerCount++;
+    for (const outcome of totals.outcomes) {
+      if (outcome.point == null) continue;
+      const entry = byPoint.get(outcome.point) ?? { over: [], under: [] };
+      if (outcome.name === "Over") entry.over.push(outcome.price);
+      else if (outcome.name === "Under") entry.under.push(outcome.price);
+      byPoint.set(outcome.point, entry);
+    }
+  }
+
+  if (byPoint.size === 0) return null;
+
+  let chosenPoint = -1;
+  let bestCoverage = 0;
+  for (const [point, entry] of byPoint) {
+    const coverage = entry.over.length + entry.under.length;
+    if (coverage > bestCoverage) {
+      bestCoverage = coverage;
+      chosenPoint = point;
+    }
+  }
+
+  const entry = byPoint.get(chosenPoint)!;
+  if (entry.over.length === 0 || entry.under.length === 0) return null;
+
+  const avgOver = average(entry.over);
+  const avgUnder = average(entry.under);
+  const impliedOver = 1 / avgOver;
+  const impliedUnder = 1 / avgUnder;
+  const impliedSum = impliedOver + impliedUnder;
+  const normOver = impliedOver / impliedSum;
+  const normUnder = impliedUnder / impliedSum;
+
+  const favorsOver = normOver >= normUnder;
+  const favoriteNormProb = favorsOver ? normOver : normUnder;
+  const favoritePrices = favorsOver ? entry.over : entry.under;
+  const avgOdds = favorsOver ? avgOver : avgUnder;
+  const minOdds = Math.min(...favoritePrices);
+  const maxOdds = Math.max(...favoritePrices);
+  const spreadRatio = (maxOdds - minOdds) / avgOdds;
+  const consensus = spreadRatio < 0.05 ? "fort consensus" : "léger désaccord";
+  const confidence = Math.round(favoriteNormProb * 100);
+  const direction = favorsOver ? "Plus" : "Moins";
+
+  return {
+    sport: sportInfo.group,
+    league: sportInfo.title,
+    event: `${event.home_team} vs ${event.away_team}`,
+    market: "Nombre de buts (Over/Under)",
+    selection: `${direction} de ${chosenPoint} buts`,
+    odds: Math.round(avgOdds * 100) / 100,
+    confidence,
+    reasoning:
+      `"${direction} de ${chosenPoint} buts" favorisé avec une cote moyenne de ${avgOdds.toFixed(2)} chez ${bookmakerCount} bookmaker(s) ` +
+      `(probabilité implicite ≈ ${confidence}%). ${capitalize(consensus)} entre bookmakers ` +
       `(cotes de ${minOdds.toFixed(2)} à ${maxOdds.toFixed(2)}).`,
     sourceUrls: ["https://the-odds-api.com"],
   };
@@ -186,7 +263,17 @@ export async function generatePicks(): Promise<{ count: number; date: string }> 
   const regions = process.env.ODDS_API_REGIONS ?? "eu";
 
   const activeSports = await getActiveSports(apiKey);
-  const sportsToQuery = activeSports.slice(0, MAX_SPORT_CALLS);
+
+  // Sélection des sports à interroger dans la limite du budget de crédits.
+  const sportsToQuery: OddsApiSport[] = [];
+  let budgetUsed = 0;
+  for (const s of activeSports) {
+    if (sportsToQuery.length >= MAX_SPORT_CALLS) break;
+    const cost = s.group === "Soccer" ? 2 : 1; // foot = h2h + totals, autres = h2h seul
+    if (budgetUsed + cost > DAILY_CREDIT_BUDGET) continue;
+    sportsToQuery.push(s);
+    budgetUsed += cost;
+  }
 
   const todayIso = new Date().toISOString().slice(0, 10);
   const dateOnly = new Date(`${todayIso}T00:00:00.000Z`);
@@ -201,9 +288,11 @@ export async function generatePicks(): Promise<{ count: number; date: string }> 
   const candidates: CandidatePick[] = [];
 
   for (const sportInfo of sportsToQuery) {
+    const isSoccer = sportInfo.group === "Soccer";
+    const markets = isSoccer ? "h2h,totals" : "h2h";
     const url =
       `https://api.the-odds-api.com/v4/sports/${sportInfo.key}/odds/` +
-      `?apiKey=${apiKey}&regions=${regions}&markets=h2h&oddsFormat=decimal`;
+      `?apiKey=${apiKey}&regions=${regions}&markets=${markets}&oddsFormat=decimal`;
     let events: OddsApiEvent[];
     try {
       events = await fetchJson<OddsApiEvent[]>(url);
@@ -215,8 +304,14 @@ export async function generatePicks(): Promise<{ count: number; date: string }> 
     for (const event of events) {
       const commence = new Date(event.commence_time).getTime();
       if (commence < now || commence > cutoff) continue;
-      const candidate = evaluateEvent(event, sportInfo);
-      if (candidate) candidates.push(candidate);
+
+      const h2hCandidate = evaluateH2h(event, sportInfo);
+      if (h2hCandidate) candidates.push(h2hCandidate);
+
+      if (isSoccer) {
+        const totalsCandidate = evaluateTotals(event, sportInfo);
+        if (totalsCandidate) candidates.push(totalsCandidate);
+      }
     }
   }
 
