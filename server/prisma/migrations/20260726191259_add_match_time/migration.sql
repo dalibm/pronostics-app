@@ -1,8 +1,4 @@
-/*
-  Warnings:
-
-  - Added the required column `matchTime` to the `Pick` table without a default value. This is not possible if the table is not empty.
-
-*/
 -- AlterTable
-ALTER TABLE "Pick" ADD COLUMN     "matchTime" TIMESTAMP(3) NOT NULL;
+-- DEFAULT now() ajouté manuellement pour ne pas échouer si la table "Pick"
+-- contient déjà des lignes (elles sont de toute façon régénérées chaque jour).
+ALTER TABLE "Pick" ADD COLUMN     "matchTime" TIMESTAMP(3) NOT NULL DEFAULT now();
