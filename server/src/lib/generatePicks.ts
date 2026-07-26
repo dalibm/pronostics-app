@@ -309,7 +309,11 @@ async function evaluateSports(
   return candidates;
 }
 
-export async function generatePicks(): Promise<{ count: number; date: string }> {
+async function generatePicksForPeriod(
+  period: "DAILY" | "WEEKLY",
+  hoursAhead: number,
+  topN: number,
+): Promise<{ count: number; date: string }> {
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {
     throw new Error("ODDS_API_KEY manquant dans les variables d'environnement");
@@ -323,7 +327,7 @@ export async function generatePicks(): Promise<{ count: number; date: string }> 
   const todayIso = new Date().toISOString().slice(0, 10);
   const dateOnly = new Date(`${todayIso}T00:00:00.000Z`);
   const now = Date.now();
-  const cutoff = now + HOURS_AHEAD * 60 * 60 * 1000;
+  const cutoff = now + hoursAhead * 60 * 60 * 1000;
 
   // Le foot est toujours prioritaire : on interroge TOUTES les ligues actives
   // (top divisions comme D2/D3), h2h + buts. Coût nul pour celles sans match.
@@ -336,11 +340,11 @@ export async function generatePicks(): Promise<{ count: number; date: string }> 
     MAX_PAID_FOOTBALL_LEAGUES,
   );
 
-  let picks = footballCandidates.sort((a, b) => b.confidence - a.confidence).slice(0, 5);
+  let picks = footballCandidates.sort((a, b) => b.confidence - a.confidence).slice(0, topN);
 
   // Les autres sports ne comblent que les places restantes.
-  if (picks.length < 5) {
-    const remainingSlots = 5 - picks.length;
+  if (picks.length < topN) {
+    const remainingSlots = topN - picks.length;
     const otherCandidates = await evaluateSports(
       otherSports,
       apiKey,
@@ -353,10 +357,17 @@ export async function generatePicks(): Promise<{ count: number; date: string }> 
     picks = [...picks, ...otherPicks];
   }
 
-  await prisma.pick.deleteMany({ where: { date: dateOnly } });
+  // Le quotidien ne remplace que les pronostics du jour ; l'hebdomadaire
+  // remplace toute la liste précédente (une seule liste "semaine" à la fois).
+  if (period === "DAILY") {
+    await prisma.pick.deleteMany({ where: { period, date: dateOnly } });
+  } else {
+    await prisma.pick.deleteMany({ where: { period } });
+  }
   if (picks.length > 0) {
     await prisma.pick.createMany({
       data: picks.map((p) => ({
+        period,
         date: dateOnly,
         matchTime: new Date(p.matchTime),
         sport: p.sport,
@@ -373,4 +384,12 @@ export async function generatePicks(): Promise<{ count: number; date: string }> 
   }
 
   return { count: picks.length, date: todayIso };
+}
+
+export async function generatePicks(): Promise<{ count: number; date: string }> {
+  return generatePicksForPeriod("DAILY", HOURS_AHEAD, 5);
+}
+
+export async function generateWeeklyPicks(): Promise<{ count: number; date: string }> {
+  return generatePicksForPeriod("WEEKLY", 7 * 24, 10);
 }

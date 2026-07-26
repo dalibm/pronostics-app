@@ -7,9 +7,15 @@ datasource db {
   provider = "postgresql"
 }
 
+enum PickPeriod {
+  DAILY
+  WEEKLY
+}
+
 model Pick {
-  id         String   @id @default(cuid())
-  date       DateTime @db.Date
+  id         String     @id @default(cuid())
+  period     PickPeriod @default(DAILY)
+  date       DateTime   @db.Date
   matchTime  DateTime
   sport      String
   league     String?
@@ -18,9 +24,9 @@ model Pick {
   selection  String
   odds       Float?
   confidence Int
-  reasoning  String   @db.Text
+  reasoning  String     @db.Text
   sourceUrls String[]
-  createdAt  DateTime @default(now())
+  createdAt  DateTime   @default(now())
 
-  @@index([date])
+  @@index([period, date])
 }

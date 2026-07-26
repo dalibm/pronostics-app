@@ -1,6 +1,6 @@
 # Pronostics App
 
-Application iPhone personnelle, 100% gratuite, qui affiche chaque jour jusqu'à 5 pronostics de paris sportifs. Les pronostics sont calculés automatiquement (sans IA payante) à partir des cotes réelles fournies par [The Odds API](https://the-odds-api.com) (plan gratuit, 500 requêtes/mois, sans carte bancaire).
+Application iPhone personnelle, 100% gratuite, qui affiche des pronostics de paris sportifs : une liste **quotidienne** de 5 pronostics (matchs des prochaines 24h) et une liste **hebdomadaire** de 10 pronostics (générée chaque mardi, matchs des 7 prochains jours). Les pronostics sont calculés automatiquement (sans IA payante) à partir des cotes réelles fournies par [The Odds API](https://the-odds-api.com) (plan gratuit, 500 requêtes/mois, sans carte bancaire).
 
 ## Structure
 
@@ -147,11 +147,14 @@ CRON_SECRET=f48adcc66a0946f7a4e2b88ece9a28e82e0bba6d3903b9ea58c3c161c3990c32
 
 Clique sur **Deploy**. Le script `build` (`prisma generate && prisma migrate deploy && next build`) crée automatiquement la table `Pick` sur la nouvelle base au premier déploiement.
 
-Une fois déployé, Vercel te donne une URL du type `https://pronostics-app-wq1e.vercel.app`. Le cron défini dans `vercel.json` (`/api/cron/generate-picks`, tous les jours à 7h UTC) génère les pronostics automatiquement — plus besoin de ton Mac.
+Une fois déployé, Vercel te donne une URL du type `https://pronostics-app-wq1e.vercel.app`. Deux crons définis dans `vercel.json` génèrent les pronostics automatiquement — plus besoin de ton Mac :
+- `/api/cron/generate-picks` — tous les jours à 7h UTC (liste quotidienne, `GET /api/picks/today`)
+- `/api/cron/generate-weekly-picks` — chaque mardi à 6h UTC (liste hebdomadaire, `GET /api/picks/week`)
 
 Pour tester manuellement la génération sur le déploiement :
 ```sh
 curl -H "Authorization: Bearer <ton CRON_SECRET>" https://pronostics-app-wq1e.vercel.app/api/cron/generate-picks
+curl -H "Authorization: Bearer <ton CRON_SECRET>" https://pronostics-app-wq1e.vercel.app/api/cron/generate-weekly-picks
 ```
 
 ### f. Redéployer après un changement

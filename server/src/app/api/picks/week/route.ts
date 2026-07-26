@@ -2,13 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-
   const picks = await prisma.pick.findMany({
-    where: { period: "DAILY", date: today },
+    where: { period: "WEEKLY" },
     orderBy: { confidence: "desc" },
   });
 
-  return NextResponse.json({ date: today.toISOString().slice(0, 10), picks });
+  const generatedAt = picks[0]?.date.toISOString().slice(0, 10) ?? null;
+
+  return NextResponse.json({ date: generatedAt, picks });
 }
