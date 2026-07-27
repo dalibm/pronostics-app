@@ -97,13 +97,30 @@ type CandidatePick = {
   point: number | null;
 };
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// The Odds API renvoie régulièrement 429 EXCEEDED_FREQ_LIMIT quand on
+// enchaîne les requêtes par ligue sans pause (~40 ligues interrogées à la
+// suite pour le foot). On retente avec un backoff plutôt que d'abandonner
+// la ligue — sinon des ligues entières disparaissent du pool de candidats
+// de façon aléatoire à chaque exécution.
+const MAX_RETRIES_ON_RATE_LIMIT = 3;
+
 async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url);
+    if (res.ok) return res.json() as Promise<T>;
+
+    if (res.status === 429 && attempt < MAX_RETRIES_ON_RATE_LIMIT) {
+      await sleep(500 * (attempt + 1));
+      continue;
+    }
+
     const body = await res.text();
     throw new Error(`Requête échouée (${res.status}) : ${url}\n${body}`);
   }
-  return res.json() as Promise<T>;
 }
 
 async function getActiveSports(apiKey: string): Promise<OddsApiSport[]> {

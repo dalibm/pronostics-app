@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateWeeklyPicks } from "@/lib/generatePicks";
 
+export const maxDuration = 60;
+
 // Appelé chaque mardi par Vercel Cron (voir vercel.json). Voir
 // api/cron/generate-picks/route.ts pour le détail de la vérification du
 // secret.

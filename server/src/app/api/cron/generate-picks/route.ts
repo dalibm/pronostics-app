@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { generatePicks } from "@/lib/generatePicks";
 import { checkPendingResults } from "@/lib/checkResults";
 
+// ~40 ligues de foot interrogées séquentiellement, avec retries en cas de
+// 429 côté The Odds API (voir fetchJson dans generatePicks.ts) : la valeur
+// par défaut (10s sur Hobby) ne suffit pas toujours.
+export const maxDuration = 60;
+
 // Appelé quotidiennement par Vercel Cron (voir vercel.json). Vercel ajoute
 // automatiquement l'en-tête `Authorization: Bearer $CRON_SECRET` sur les
 // appels planifiés — on vérifie ce secret pour empêcher un déclenchement
