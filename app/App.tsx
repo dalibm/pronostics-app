@@ -2,6 +2,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -46,6 +47,7 @@ export default function App() {
   const [date, setDate] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchPicks = useCallback(async (p: Period) => {
@@ -73,6 +75,24 @@ export default function App() {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchPicks(period).finally(() => setRefreshing(false));
+  }, [period, fetchPicks]);
+
+  const onRegenerate = useCallback(async () => {
+    setRegenerating(true);
+    try {
+      const res = await fetch(`${API_URL}/api/picks/${period}`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Erreur serveur (${res.status})`);
+      await fetchPicks(period);
+      Alert.alert("Pronostics régénérés", `${data.count} pronostic(s) généré(s).`);
+    } catch (e) {
+      Alert.alert(
+        "Échec de la régénération",
+        e instanceof Error ? e.message : "Impossible de contacter le serveur.",
+      );
+    } finally {
+      setRegenerating(false);
+    }
   }, [period, fetchPicks]);
 
   const emptyMessage =
@@ -104,7 +124,20 @@ export default function App() {
         </Pressable>
       </View>
 
-      {!!date && <Text style={styles.date}>{date}</Text>}
+      <View style={styles.dateRow}>
+        {!!date && <Text style={styles.date}>{date}</Text>}
+        <Pressable
+          style={[styles.regenerateButton, regenerating && styles.regenerateButtonDisabled]}
+          onPress={onRegenerate}
+          disabled={regenerating}
+        >
+          {regenerating ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.regenerateText}>Régénérer</Text>
+          )}
+        </Pressable>
+      </View>
 
       {loading ? (
         <ActivityIndicator style={styles.loader} size="large" />
@@ -190,10 +223,32 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: "#fff",
   },
+  dateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
   date: {
     fontSize: 14,
     color: "#8a93a6",
-    marginBottom: 12,
+  },
+  regenerateButton: {
+    backgroundColor: "#2b3552",
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    minWidth: 92,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  regenerateButtonDisabled: {
+    opacity: 0.6,
+  },
+  regenerateText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
   },
   loader: {
     marginTop: 40,
