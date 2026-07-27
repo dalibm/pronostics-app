@@ -39,9 +39,15 @@ const MAX_PAID_FOOTBALL_LEAGUES = 60;
 const MAX_PAID_OTHER_SPORTS = 6;
 const HOURS_AHEAD = 24;
 
-// On exclut les cotes trop faibles (favoris écrasants, peu de valeur pour un
-// parieur) même si leur confiance calculée est très élevée.
-const MIN_ODDS = 1.2;
+// Objectif = maximiser le taux de réussite, pas la valeur pour un parieur :
+// on n'exclut plus les favoris à cote très faible (ex. 1.05), au contraire
+// ce sont eux qui ont statistiquement le plus de chances de se réaliser.
+//
+// En revanche on exige un minimum de bookmakers en accord sur une cote —
+// un marché avec 1-2 cotations peut afficher une "confiance" élevée à cause
+// d'une cote isolée mal calibrée (ligue peu liquide), sans être fiable pour
+// autant. C'est le principal facteur de bruit dans la sélection.
+const MIN_BOOKMAKERS = 5;
 
 type OddsApiSport = {
   key: string;
@@ -80,6 +86,15 @@ type CandidatePick = {
   confidence: number;
   reasoning: string;
   sourceUrls: string[];
+  // Champs bruts nécessaires pour vérifier automatiquement le résultat plus
+  // tard (voir checkResults.ts) — non affichés dans l'app.
+  sportKey: string;
+  eventId: string;
+  homeTeam: string;
+  awayTeam: string;
+  marketKey: "h2h" | "totals";
+  selectionKey: string; // home_team / away_team / "Draw" / "Over" / "Under"
+  point: number | null;
 };
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -133,6 +148,7 @@ function evaluateH2h(event: OddsApiEvent, sportInfo: OddsApiSport): CandidatePic
   const bookmakerCount = event.bookmakers.filter((b) =>
     b.markets.some((m) => m.key === "h2h"),
   ).length;
+  if (bookmakerCount < MIN_BOOKMAKERS) return null;
 
   const avgByOutcome = new Map<string, number>();
   for (const [name, prices] of pricesByOutcome) {
@@ -188,6 +204,13 @@ function evaluateH2h(event: OddsApiEvent, sportInfo: OddsApiSport): CandidatePic
       `(probabilité implicite ≈ ${confidence}%). ${capitalize(consensus)} entre bookmakers ` +
       `(cotes de ${minOdds.toFixed(2)} à ${maxOdds.toFixed(2)}).`,
     sourceUrls: ["https://the-odds-api.com"],
+    sportKey: sportInfo.key,
+    eventId: event.id,
+    homeTeam: event.home_team,
+    awayTeam: event.away_team,
+    marketKey: "h2h",
+    selectionKey: favorite,
+    point: null,
   };
 }
 
@@ -223,7 +246,7 @@ function evaluateTotals(event: OddsApiEvent, sportInfo: OddsApiSport): Candidate
   }
 
   const entry = byPoint.get(chosenPoint)!;
-  if (entry.over.length === 0 || entry.under.length === 0) return null;
+  if (Math.min(entry.over.length, entry.under.length) < MIN_BOOKMAKERS) return null;
 
   const avgOver = average(entry.over);
   const avgUnder = average(entry.under);
@@ -258,6 +281,13 @@ function evaluateTotals(event: OddsApiEvent, sportInfo: OddsApiSport): Candidate
       `(probabilité implicite ≈ ${confidence}%). ${capitalize(consensus)} entre bookmakers ` +
       `(cotes de ${minOdds.toFixed(2)} à ${maxOdds.toFixed(2)}).`,
     sourceUrls: ["https://the-odds-api.com"],
+    sportKey: sportInfo.key,
+    eventId: event.id,
+    homeTeam: event.home_team,
+    awayTeam: event.away_team,
+    marketKey: "totals",
+    selectionKey: favorsOver ? "Over" : "Under",
+    point: chosenPoint,
   };
 }
 
@@ -345,7 +375,6 @@ async function generatePicksForPeriod(
   );
 
   let picks = footballCandidates
-    .filter((c) => c.odds > MIN_ODDS)
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, topN);
 
@@ -361,7 +390,6 @@ async function generatePicksForPeriod(
       MAX_PAID_OTHER_SPORTS,
     );
     const otherPicks = otherCandidates
-      .filter((c) => c.odds > MIN_ODDS)
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, remainingSlots);
     picks = [...picks, ...otherPicks];
@@ -389,6 +417,13 @@ async function generatePicksForPeriod(
         confidence: p.confidence,
         reasoning: p.reasoning,
         sourceUrls: p.sourceUrls,
+        sportKey: p.sportKey,
+        eventId: p.eventId,
+        homeTeam: p.homeTeam,
+        awayTeam: p.awayTeam,
+        marketKey: p.marketKey,
+        selectionKey: p.selectionKey,
+        point: p.point,
       })),
     });
   }

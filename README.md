@@ -43,7 +43,7 @@ Ce script priorise le **football**, toutes divisions confondues (championnats ma
 
 1. Récupère la liste de **toutes** les ligues de foot actuellement en saison (pas seulement l'élite).
 2. Pour chacune, récupère les cotes moyennées sur plusieurs bookmakers via The Odds API — marché "1X2 / vainqueur du match" et "nombre de buts (Over/Under)" — en filtrant sur les matchs des prochaines 24h directement au niveau de la requête (`commenceTimeFrom`/`commenceTimeTo`).
-3. Calcule une probabilité implicite par issue (à partir de la cote moyenne, normalisée entre les issues possibles) et retient le favori de chaque marché comme candidat pronostic — en excluant les cotes trop faibles (≤ 1,2), peu intéressantes même à forte confiance.
+3. Calcule une probabilité implicite par issue (à partir de la cote moyenne, normalisée entre les issues possibles) et retient le favori de chaque marché comme candidat pronostic — en exigeant au moins 5 bookmakers en accord sur la cote (sinon le marché est jugé trop peu liquide/fiable pour être retenu). Aucune cote n'est exclue par ailleurs : l'objectif est de maximiser le taux de réussite, donc un favori à cote très faible (ex. 1.05) reste un bon candidat.
 4. Garde les 5 candidats de foot avec la plus haute confiance, tous championnats confondus. S'il y en a moins de 5, comble avec les autres sports suivis (mêmes règles) pour arriver à 5.
 5. Stocke le résultat en base (remplace les pronostics du jour s'ils existaient déjà).
 
@@ -52,6 +52,15 @@ Ce script priorise le **football**, toutes divisions confondues (championnats ma
 Chaque pronostic affiche aussi la **date et l'heure du match** (`matchTime`), converties automatiquement dans le fuseau horaire du téléphone côté app.
 
 Cartons et corners ne sont pas encore couverts : ce sont des marchés "additionnels" chez The Odds API qui nécessitent d'interroger chaque match individuellement (bien plus coûteux en crédits) — à ajouter plus tard si besoin, avec une limite stricte du nombre de matchs concernés pour rester gratuit.
+
+### Vérifier les résultats et mesurer le taux de réussite
+
+```sh
+npm run check:results   # va chercher le score réel des matchs joués et corrige chaque pronostic PENDING en WON/LOST/PUSH
+npm run stats           # affiche le taux de réussite mesuré (WON / (WON + LOST))
+```
+
+`check:results` est aussi appelé automatiquement au début du cron quotidien `generate-picks` (pas de cron dédié : le plan Vercel Hobby limite à 2 crons/jour, déjà pris par `generate-picks` et `generate-weekly-picks`). Un match reporté/annulé, ou introuvable après 3 jours, passe en `VOID` plutôt que de rester bloqué en `PENDING` indéfiniment. Les pronostics générés avant cette fonctionnalité n'ont pas les données nécessaires (`sportKey`/`eventId`) pour être corrigés automatiquement et resteront `PENDING`.
 
 ### Lancer le serveur
 

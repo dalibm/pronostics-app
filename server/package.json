@@ -7,7 +7,9 @@
     "build": "prisma generate && prisma migrate deploy && next build",
     "start": "next start",
     "lint": "eslint",
-    "generate:picks": "tsx scripts/generate-picks.ts"
+    "generate:picks": "tsx scripts/generate-picks.ts",
+    "check:results": "tsx scripts/check-results.ts",
+    "stats": "tsx scripts/stats.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.0",

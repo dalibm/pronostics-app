@@ -12,6 +12,14 @@ enum PickPeriod {
   WEEKLY
 }
 
+enum PickStatus {
+  PENDING
+  WON
+  LOST
+  PUSH
+  VOID
+}
+
 model Pick {
   id         String     @id @default(cuid())
   period     PickPeriod @default(DAILY)
@@ -28,5 +36,21 @@ model Pick {
   sourceUrls String[]
   createdAt  DateTime   @default(now())
 
+  // Champs machine-readable nécessaires pour vérifier automatiquement le
+  // résultat réel du match une fois joué (voir src/lib/checkResults.ts).
+  // Nullables : les pronostics générés avant cet ajout n'ont pas ces
+  // données et resteront simplement PENDING (non gradables).
+  sportKey     String?
+  eventId      String?
+  homeTeam     String?
+  awayTeam     String?
+  marketKey    String?
+  selectionKey String?
+  point        Float?
+
+  status    PickStatus @default(PENDING)
+  settledAt DateTime?
+
   @@index([period, date])
+  @@index([status, matchTime])
 }
